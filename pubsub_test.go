@@ -2,7 +2,6 @@ package pubsub
 
 import (
 	"fmt"
-	"log"
 	"sync"
 	"testing"
 
@@ -45,16 +44,16 @@ func TestMultiEventsDifferentChannels(t *testing.T) {
 	assert.Equal(t, 2, len(handlers.m))
 	assert.Equal(t, int64(1), handlers.ref[evh.String()])
 	assert.Equal(t, int64(1), handlers.ref[evb.String()])
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		select {
-		case ev1 := <-c1:
-			assert.Equal(t, "event_hello", ev1.String())
-		case ev2 := <-c2:
-			assert.Equal(t, "event_bye", ev2.String())
-		default:
-		}
+		ev1 := <-c1
+		assert.Equal(t, "event_hello", ev1.String())
+	}()
+	go func() {
+		defer wg.Done()
+		ev2 := <-c2
+		assert.Equal(t, "event_bye", ev2.String())
 	}()
 	// Publish
 	Publish(evb)
@@ -82,15 +81,13 @@ func TestMultiEventsSingleChannel(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		select {
-		case ev1 := <-c1:
-			log.Print("passei aqui")
-			assert.Equal(t, "event_bye", ev1.String())
-		default:
-		}
+		ev1 := <-c1
+		assert.Equal(t, true, ev1.String() != "")
 	}()
 	// Publish
-	// Publish(evb)
-	Publish(evh)
+	Publish(evb)
 	wg.Wait()
+	Unsubscribe(c1)
+	assert.Equal(t, 0, len(handlers.m))
+	assert.Equal(t, 0, len(handlers.ref))
 }

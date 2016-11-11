@@ -3,18 +3,20 @@ package pubsub
 import "sync"
 
 type handler struct {
-	topics map[string]bool
+	events map[string]Event
 }
 
-func (h *handler) valid(topic string) bool {
-	return h.topics[topic]
+func (h *handler) valid(e Event) bool {
+	_, ok := h.events[e.String()]
+	return ok
 }
 
-func (h *handler) set(topic string) {
-	h.topics[topic] = true
+func (h *handler) set(e Event) {
+	h.events[e.String()] = e
 }
-func (h *handler) clear(topic string) {
-	h.topics[topic] = false
+
+func (h *handler) clear(e Event) {
+	delete(h.events, e.String())
 }
 
 // handlers is a collection of events.
@@ -55,38 +57,39 @@ func Subscribe(c chan<- Event, events ...Event) {
 		if handlers.ref == nil {
 			handlers.ref = make(map[string]int64)
 		}
-		h = new(handler)
+		h = &handler{make(map[string]Event)}
 		handlers.m[c] = h
 	}
 
-	add := func(n string) {
-		if n == "" {
+	add := func(e Event) {
+		if e == nil || e.String() == "" {
 			return
 		}
-		if !h.valid(n) {
-			h.set(n)
-			handlers.ref[n]++
+		if !h.valid(e) {
+			h.set(e)
+			handlers.ref[e.String()]++
 		}
 	}
 
-	for _, ev := range events {
-		add(ev.String())
+	for _, e := range events {
+		add(e)
 	}
 }
 
 // Publish publishes an event on the registered subscriber channels.
-func Publish(ev Event) {
-	if ev.String() == "" {
+func Publish(e Event) {
+	if e == nil || e.String() == "" {
 		return
 	}
+
 	handlers.Lock()
 	defer handlers.Unlock()
 
 	for c, h := range handlers.m {
-		if h.valid(ev.String()) {
+		if h.valid(e) {
 			// send but do not block for it
 			select {
-			case c <- ev:
+			case c <- e:
 			default:
 			}
 		}
@@ -98,23 +101,27 @@ func Unsubscribe(c chan<- Event) {
 	handlers.Lock()
 	defer handlers.Unlock()
 
-	_, ok := handlers.m[c]
+	h, ok := handlers.m[c]
 	if !ok {
 		return
 	}
 
-	// remove := func(n string) {
-	// 	if n == "" {
-	// 		return
-	// 	}
-	// 	if h.valid(n) {
-	// 		handlers.ref[n]--
-	// 		if handlers.ref[n] == 0 {
-	// 			delete(handlers.ref, n)
-	// 		}
-	// 		h.clear(n)
-	// 	}
-	// }
-	// remove(h.topics)
+	remove := func(e Event) {
+		if e == nil || e.String() == "" {
+			return
+		}
+		if h.valid(e) {
+			handlers.ref[e.String()]--
+			if handlers.ref[e.String()] == 0 {
+				delete(handlers.ref, e.String())
+			}
+			h.clear(e)
+		}
+	}
+
+	for _, e := range h.events {
+		remove(e)
+	}
+
 	delete(handlers.m, c)
 }
